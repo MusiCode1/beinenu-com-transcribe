@@ -137,7 +137,7 @@ def convert_to_subtitles_time_format(seconds):
 	minutes = int(seconds // 60)
 	seconds %= 60
 	milliseconds = int((seconds - int(seconds)) * 1000)
-	str_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
+	str_time = "%02d:%02d:%02d.%03d" % (hours, minutes, seconds, milliseconds)
 	return str_time
 
 def write_segments_to_vtt(segments, file_path):
