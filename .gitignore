@@ -1,4 +1,3 @@
-client_secret*
 
-mycreds.txt
 __pycache__
+gdrive-auth.json

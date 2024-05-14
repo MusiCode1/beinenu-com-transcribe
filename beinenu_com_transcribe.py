@@ -7,7 +7,7 @@ from tqdm import tqdm
 from faster_whisper import WhisperModel
 from bs4 import BeautifulSoup
 from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
+from pydrive.drive import GoogleDrive, GoogleDriveFile
 
 
 def get_lesson_elements(url: str):
@@ -41,7 +41,7 @@ def get_lesson_elements(url: str):
         lesson_elements = {
             "title_rabbi": title_rabbi_element.text.strip(),
             "title_lessons": title_lessons_parts[0].strip(),
-            "title_lessons_year": title_lessons_parts[1].strip(),
+            "title_lessons_year": title_lessons_parts[1].replace('"', "").strip(),
             "video_id": video_id,
             "video_url": video_url,
         }
@@ -94,18 +94,14 @@ def download_file(url, filename):
 
     filename = clean_filename(filename)
 
-    
     response = requests.get(url, stream=True, verify=False)
 
-    
     if response.status_code == 200:
-        
+
         total_size = int(response.headers.get("content-length", 0))
 
-        
         file_path = os.path.join(os.getcwd(), filename)
 
-        
         with open(file_path, "wb") as file, tqdm(
             desc=filename,
             total=total_size,
@@ -168,14 +164,12 @@ def write_segments_to_srt(segments, file_path):
             print(f"[{start_time} --> {end_time}] {text}")
 
 
-def transcribe(directory: str, subtitles_format: str) -> None:
-    
-    #device="cpu"
-    #compute_type="default"
-    compute_type="float16"
+def transcribe(video_file_name: str, subtitles_format: str, srt_file_name: str) -> None:
+
+    # device="cpu"
+    # compute_type="default"
+    compute_type = "float16"
     device = "cuda"
-    
-    
 
     assert subtitles_format in [
         "srt",
@@ -185,26 +179,22 @@ def transcribe(directory: str, subtitles_format: str) -> None:
     model_size = "large-v2"
     initial_prompt = "Hello, How is it going? Please, always use punctuation."
     model = WhisperModel(model_size, device, compute_type=compute_type)
-    for filename in os.listdir(directory):
-        if filename.endswith(".mp4"):
-            audio_file_path = os.path.join(directory, filename)
-            filename_without_extension = os.path.splitext(filename)[0]
 
-            segments, info = model.transcribe(
-                audio_file_path,
-                beam_size=5,
-                language="he",
-                initial_prompt=initial_prompt,
-            )
+    segments, info = model.transcribe(
+        video_file_name,
+        beam_size=5,
+        language="he",
+        initial_prompt=initial_prompt,
+    )
 
-            if subtitles_format == "srt":
-                output_file = f"{filename_without_extension}.srt"
-                write_segments_to_srt(segments, output_file)
-            else:
-                output_file = f"{filename_without_extension}.vtt"
-                write_segments_to_vtt(segments, output_file)
+    if subtitles_format == "srt":
+        output_file = f"{srt_file_name}.srt"
+        write_segments_to_srt(segments, output_file)
+    else:
+        output_file = f"{srt_file_name}.vtt"
+        write_segments_to_vtt(segments, output_file)
 
-            print("Transcription saved to", output_file)
+    print("Transcription saved to", output_file)
 
 
 def clean_filename(filename: str):
@@ -212,14 +202,15 @@ def clean_filename(filename: str):
     Removes all invalid characters for filenames across different operating systems.
     Returns a cleaned version of the filename.
     """
-    bad_chars = r'[<>:/\\|?*"]'
-    cleaned = re.sub(bad_chars, '_', filename)
+    bad_chars = r'[<>:/\\|?*"\']'
+    cleaned = re.sub(bad_chars, "", filename)
     return cleaned
 
+
 class GoogleDriveUpload:
-    def __init__(self) -> None:
-        self.gauth = GoogleAuth()
-        self.gauth.LoadCredentialsFile("mycreds.txt")
+    def __init__(self, gauth: GoogleAuth) -> None:
+        self.gauth = gauth
+        # self.gauth.LoadCredentialsFile("mycreds.txt")
         self.drive = GoogleDrive(self.gauth)
 
     def local_server_auth_and_save(self):
@@ -227,51 +218,67 @@ class GoogleDriveUpload:
         self.gauth.SaveCredentialsFile("mycreds.txt")
         self.drive = GoogleDrive(self.gauth)
 
+    def check_if_folder_name_exist(
+        self, folder_name: str, parent_folder_id: str
+    ) -> GoogleDriveFile | bool:
 
-    def check_if_folder_name_exist(self, folder_name: str, parent_folder_id: str):
         q = f"title='{folder_name}' and '{parent_folder_id}' in parents"
         file_list = self.drive.ListFile({"q": q}).GetList()
+        if len(file_list) > 1:
+            raise ValueError("יש יותר מתיקייה אחת מתאימה")
         if len(file_list) > 0:
-            return file_list
+            folder = file_list[0]
+            return folder
         else:
             return False
 
     def create_folder(self, name: str, parent_folder_id: str):
-        file = self.drive.CreateFile({
-            "title": name,
-            "mimeType": "application/vnd.google-apps.folder",
-            "parents": [{
-                "id": parent_folder_id
-            }]
-        })
+        file = self.drive.CreateFile(
+            {
+                "title": name,
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": [{"id": parent_folder_id}],
+            }
+        )
         file.Upload()
+        return file
 
-    def create_folder_if_not_exist(self, folder_name:str, parent_folder_id:str):
+    def create_folder_if_not_exist(
+        self, folder_name: str, parent_folder_id: str
+    ) -> GoogleDriveFile:
 
         folder_details = self.check_if_folder_name_exist(folder_name, parent_folder_id)
 
-        if(folder_details):
+        if folder_details:
             return folder_details
         else:
-            self.create_folder(folder_name, parent_folder_id)
-    
+            return self.create_folder(folder_name, parent_folder_id)
 
-    def upload_file(self, local_file_path:str, parent_folder_id:str):
-        
-        file_name = os.path.basename(local_file_path)
+    def upload_file(self, local_file_path: str, parent_folder_id: str):
 
-        file = self.drive.CreateFile({
-            'title': file_name,
-            "parents": [{
-                "id": parent_folder_id
-            }]
-        })
+        parents = [{"id": parent_folder_id}]
 
+        file_name = split_path_and_filename(local_file_path)
+
+        file = self.drive.CreateFile({"title": file_name, "parents": parents})
         file.SetContentFile(local_file_path)
-
         file.Upload()
+        return file
 
-    def upload_lesson_files_to_drive(self, rabbi_name, file_name, drive_folder_id):
-        self.create_folder_if_not_exist(rabbi_name, drive_folder_id)
-        self.upload_file(file_name, drive_folder_id)
-    
+
+def convert_google_code(code: str):
+    parsed_url = urllib.parse.urlparse(code)
+    query_params = urllib.parse.parse_qs(parsed_url.query)
+
+    code = query_params.get("code")[0]
+
+    return code
+
+
+def split_path_and_filename(path_or_filename):
+    if os.path.isabs(path_or_filename):
+        filename = os.path.split(path_or_filename)
+    else:
+        filename = path_or_filename
+
+    return filename
