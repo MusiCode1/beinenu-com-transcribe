@@ -6,6 +6,8 @@ import os
 from tqdm import tqdm
 from faster_whisper import WhisperModel
 from bs4 import BeautifulSoup
+from pydrive.auth import GoogleAuth
+from pydrive.drive import GoogleDrive
 
 
 def get_lesson_elements(url: str):
@@ -89,18 +91,21 @@ async def get_video_id(url: str) -> dict:
 
 
 def download_file(url, filename):
-    # Send a GET request to the URL
+
+    filename = clean_filename(filename)
+
+    
     response = requests.get(url, stream=True, verify=False)
 
-    # Check if the request was successful
+    
     if response.status_code == 200:
-        # Get the total file size
+        
         total_size = int(response.headers.get("content-length", 0))
 
-        # Create a new file in the current directory
+        
         file_path = os.path.join(os.getcwd(), filename)
 
-        # Write the file content to the new file
+        
         with open(file_path, "wb") as file, tqdm(
             desc=filename,
             total=total_size,
@@ -164,6 +169,10 @@ def write_segments_to_srt(segments, file_path):
 
 
 def transcribe(directory: str, subtitles_format: str) -> None:
+    
+    device="cpu"
+    # compute_type="float16"
+    compute_type="default"
 
     assert subtitles_format in [
         "srt",
@@ -172,7 +181,7 @@ def transcribe(directory: str, subtitles_format: str) -> None:
 
     model_size = "large-v2"
     initial_prompt = "Hello, How is it going? Please, always use punctuation."
-    model = WhisperModel(model_size, device="cuda", compute_type="float16")
+    model = WhisperModel(model_size, device, compute_type=compute_type)
     for filename in os.listdir(directory):
         if filename.endswith(".mp4"):
             audio_file_path = os.path.join(directory, filename)
@@ -193,3 +202,73 @@ def transcribe(directory: str, subtitles_format: str) -> None:
                 write_segments_to_vtt(segments, output_file)
 
             print("Transcription saved to", output_file)
+
+
+def clean_filename(filename: str):
+    """
+    Removes all invalid characters for filenames across different operating systems.
+    Returns a cleaned version of the filename.
+    """
+    bad_chars = r'[<>:/\\|?*"]'
+    cleaned = re.sub(bad_chars, '_', filename)
+    return cleaned
+
+class GoogleDriveUpload:
+    def __init__(self) -> None:
+        self.gauth = GoogleAuth()
+        self.gauth.LoadCredentialsFile("mycreds.txt")
+        self.drive = GoogleDrive(self.gauth)
+
+    def local_server_auth_and_save(self):
+        self.gauth.LocalWebserverAuth()
+        self.gauth.SaveCredentialsFile("mycreds.txt")
+        self.drive = GoogleDrive(self.gauth)
+
+
+    def check_if_folder_name_exist(self, folder_name: str, parent_folder_id: str):
+        q = f"title='{folder_name}' and '{parent_folder_id}' in parents"
+        file_list = self.drive.ListFile({"q": q}).GetList()
+        if len(file_list) > 0:
+            return file_list
+        else:
+            return False
+
+    def create_folder(self, name: str, parent_folder_id: str):
+        file = self.drive.CreateFile({
+            "title": name,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [{
+                "id": parent_folder_id
+            }]
+        })
+        file.Upload()
+
+    def create_folder_if_not_exist(self, folder_name:str, parent_folder_id:str):
+
+        folder_details = self.check_if_folder_name_exist(folder_name, parent_folder_id)
+
+        if(folder_details):
+            return folder_details
+        else:
+            self.create_folder(folder_name, parent_folder_id)
+    
+
+    def upload_file(self, local_file_path:str, parent_folder_id:str):
+        
+        file_name = os.path.basename(local_file_path)
+
+        file = self.drive.CreateFile({
+            'title': file_name,
+            "parents": [{
+                "id": parent_folder_id
+            }]
+        })
+
+        file.SetContentFile(local_file_path)
+
+        file.Upload()
+
+    def upload_lesson_files_to_drive(self, rabbi_name, file_name, drive_folder_id):
+        self.create_folder_if_not_exist(rabbi_name, drive_folder_id)
+        self.upload_file(file_name, drive_folder_id)
+    
