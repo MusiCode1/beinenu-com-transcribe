@@ -170,9 +170,12 @@ def write_segments_to_srt(segments, file_path):
 
 def transcribe(directory: str, subtitles_format: str) -> None:
     
-    device="cpu"
-    # compute_type="float16"
-    compute_type="default"
+    #device="cpu"
+    #compute_type="default"
+    compute_type="float16"
+    device = "cuda"
+    
+    
 
     assert subtitles_format in [
         "srt",
