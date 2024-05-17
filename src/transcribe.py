@@ -1,5 +1,5 @@
 from faster_whisper import WhisperModel
-from env_name import get_env_name
+from src.env_name import get_env_name
 from typing import Union, Literal
 
 
