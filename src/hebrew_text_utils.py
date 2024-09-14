@@ -12,7 +12,7 @@ def remove_hebrew_niqqud(text: str):
 
 def remove_pesukim_letters(text: str):
 
-    psukim_pattern = re.compile(r"(^|\.\s|\s\s)[א-ת]{1,2}\s")
+    psukim_pattern = re.compile(r"(^|\.\s\s|\n)[א-ת]{1,2}\s")
 
     clean_text = re.sub(psukim_pattern, "\r\n", text)
 
@@ -25,16 +25,32 @@ def remove_curly_braces_and_content(text: str):
 
     return re.sub(pattern, "", text)
 
-def remove_extra_spaces(text: str):
 
-    return ' '.join(text.split())
+def remove_extra_spaces(text: str):
+    
+    pattern = re.compile(r" {2,}")
+
+    return re.sub(pattern, " ", text)
+
 
 def replace_colon_and_semicolon_with_comma(text: str):
 
-    return text.replace(':', ',').replace(';', ',')
+    return text.replace(':', ',').replace(';', ',').replace("--", " ")
+
 
 def remove_extra_characters(text: str, chars:str):
     return text.replace(chars, '')
+
+
+def remove_extra_new_lines(text: str):
+    text = text.replace("\r\n", "\n")
+    
+    pattern = re.compile(r"(\r\n{2,})|(\n{2,})")
+    
+    text = re.sub(pattern, "\n", text)
+    
+    return text
+
 
 def clean_the_text(text):
     clean_text = remove_pesukim_letters(text)
@@ -42,5 +58,7 @@ def clean_the_text(text):
     clean_text = remove_curly_braces_and_content(clean_text)
     clean_text = remove_hebrew_niqqud(clean_text)
     clean_text = remove_extra_spaces(clean_text)
-    clean_text = clean_text.replace("--", " ")
-    return clean_text
+    clean_text = remove_extra_new_lines(clean_text)
+    
+    return clean_text.strip()
+
