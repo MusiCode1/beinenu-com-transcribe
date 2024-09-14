@@ -67,7 +67,7 @@ class GoogleDriveUpload:
 
 def split_path_and_filename(path_or_filename):
     if os.path.isabs(path_or_filename):
-        filename = os.path.split(path_or_filename)
+        filename = os.path.split(path_or_filename)[1]
     else:
         filename = path_or_filename
 
