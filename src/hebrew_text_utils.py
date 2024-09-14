@@ -12,9 +12,14 @@ def remove_hebrew_niqqud(text: str):
 
 def remove_pesukim_letters(text: str):
 
-    psukim_pattern = re.compile(r"(^|\.\s\s|\n)[א-ת]{1,2}\s")
+    psukim_pattern = re.compile(r"(^|(\.)\s\s|\n)[א-ת]{1,2}\s")
 
-    clean_text = re.sub(psukim_pattern, "\r\n", text)
+    def replacement(match):
+        if match.group(2):
+            return match.group(2) + "\r\n"
+        return "\r\n" 
+    
+    clean_text = re.sub(psukim_pattern, replacement, text)
 
     return clean_text
 
